@@ -1,0 +1,199 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# uv (Python package manager)
+.venv/
+uv.lock
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Environment Variables (CRITICAL FOR SECURITY)
+.env
+.env.local
+.env.production
+.env.staging
+*.env
+!.env.example
+
+# OpenAI API Keys and Secrets
+openai_key.txt
+api_keys.txt
+secrets.json
+config/secrets.py
+
+# Project Specific Files
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Test Data (potentially sensitive)
+tests/test_samples/*.jpg
+tests/test_samples/*.png
+tests/test_samples/*.pdf
+tests/test_samples/personal_data.txt
+tests/real_data/
+
+# Excel Files (may contain real customer data)
+*.xlsx
+*.xls
+*.csv
+!tests/sample_data.xlsx
+!templates/*.xlsx
+
+# Image Files (receipt images may contain personal info)
+receipts/
+images/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+!docs/images/
+
+# Temporary Files
+tmp/
+temp/
+.tmp
+*.tmp
+*.swp
+*.swo
+*~
+
+# OCR Output
+ocr_output/
+extracted_text/
+
+# Backup Files
+backup/
+*.bak
+*.backup
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE and Editor Files
+*.sublime-project
+*.sublime-workspace
+.vimrc
+
+# Documentation Build
+docs/_build/
+docs/build/
+site/
+
+# Distribution / Packaging
+.Python
+pip-wheel-metadata/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# Performance Profiling
+*.prof
+
+# Cache directories
+.cache/
+cache/
+
+# Application specific
+
+# Processed data (may contain PII)
+processed_data/
+output/
+results/
+
+# Model files or cached API responses
+models/
+api_cache/
+
+# Database files
+*.db
+*.sqlite3
+
+# Configuration files with sensitive data
+config/production.py
+config/local_settings.py
