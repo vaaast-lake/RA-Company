@@ -51,12 +51,12 @@ JSON_SCHEMA_FORMAT = {
                         "name":       {"type": ["string","null"]},
                         "unit_price": {"type": ["integer","null"]},
                         "quantity":   {"type": ["integer","null"]},
-                        "amount":     {"type": ["integer","null"]}
+                        "amount":     {"type": ["integer","null"]},
+                        "options":    {"type": ["string","null"]}
                     },
                     "required": ["name","unit_price","quantity","amount"]
                 }
             },
-            "options":         {"type": ["string","null"]},
             "representative":  {"type": ["string","null"]},
             "business_no":     {"type": ["string","null"]},
             "phone":           {"type": ["string","null"]},
@@ -75,7 +75,6 @@ JSON_SCHEMA_FORMAT = {
             "approved_at",
             "merchant_no",
             "items",
-            "options",
             "representative",
             "business_no",
             "phone",
