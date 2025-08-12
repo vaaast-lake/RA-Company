@@ -197,3 +197,6 @@ api_cache/
 # Configuration files with sensitive data
 config/production.py
 config/local_settings.py
+
+# test files
+test.*

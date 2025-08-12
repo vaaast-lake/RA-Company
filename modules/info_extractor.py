@@ -41,7 +41,7 @@ class PersonalInfoExtractor:
                 reasoning={"effort": "minimal"}
             )
 
-            print(f"전체 응답 내용: {response}")
+            # print(f"전체 응답 내용: {response}")
             print(f"추출 성공: {response.output_parsed}")
             
             # 전화번호 정규화
@@ -159,5 +159,5 @@ def main():
     print(f"완전 추출 성공: {successful_extractions}/{len(test_samples)} ({successful_extractions/len(test_samples)*100:.1f}%)")
     
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
