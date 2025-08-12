@@ -54,7 +54,7 @@ JSON_SCHEMA_FORMAT = {
                         "amount":     {"type": ["integer","null"]},
                         "options":    {"type": ["string","null"]}
                     },
-                    "required": ["name","unit_price","quantity","amount"]
+                    "required": ["name","unit_price","quantity","amount", "options"]
                 }
             },
             "representative":  {"type": ["string","null"]},

@@ -440,12 +440,29 @@ class OrderMatcher:
         if not items:
             return ""
         
+        # 택배 관련 옵션이 있는 아이템만 필터링
+        delivery_items = []
+        for item in items:
+            options = item.get('options', '') or ''  # None 처리
+            print(f"[DEBUG] 아이템 '{item.get('name')}' 옵션: '{options}'")
+            
+            # 옵션에 택배 관련 키워드가 있는지 확인
+            if '채널추가무료배송' in options or '택배요청' in options:
+                delivery_items.append(item)
+                print(f"[DEBUG] 택배 아이템으로 선택: {item.get('name')}")
+            else:
+                print(f"[DEBUG] 택배 아이템 아님: {item.get('name')}")
+        
+        if not delivery_items:
+            print("[DEBUG] 택배 관련 아이템이 없음")
+            return ""
+
         # 총 수량 계산
-        total_quantity = sum(item.get('quantity', 1) for item in items)
+        total_quantity = sum(item.get('quantity', 1) for item in delivery_items)
         # print(f"[DEBUG] 총 수량: {total_quantity}")
         # 아이템별 텍스트 생성
         item_texts = []
-        for item in items:
+        for item in delivery_items:
             name = item.get('name', '')
             quantity = item.get('quantity', 1)
             
@@ -460,14 +477,14 @@ class OrderMatcher:
         # 최종 형식: "총X개) item1/item2/item3"
         if len(item_texts) == 1:
             # 단일 아이템인 경우
-            # result = f"총{total_quantity}개) {item_texts[0]}"
+            result = f"총{total_quantity}개) {item_texts[0]}"
             # print(f"[DEBUG] 단일 아이템 결과: '{result}'")
-            return f"총{total_quantity}개) {item_texts[0]}"
+            return result
         else:
             # 복수 아이템인 경우
-            # result = f"총{total_quantity}개) {'/'.join(item_texts)}"
+            result = f"총{total_quantity}개) {'/'.join(item_texts)}"
             # print(f"[DEBUG] 복수 아이템 결과: '{result}'")
-            return f"총{total_quantity}개) {'/'.join(item_texts)}"
+            return result
         
     def group_by_order_time(self, order_df: pd.DataFrame, indices: List[int]) -> Dict[float, List[int]]:
         """
