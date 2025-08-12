@@ -625,6 +625,62 @@ def convert_date_columns_for_display(worksheet):
                 except:
                     pass  # 변환 실패 시 원본 유지
 
+def process_single_receipt_with_handler(excel_handler, receipt_data: Dict, 
+                                      customer_info: Dict, target_sheet_name: str) -> Dict:
+    """
+    단일 영수증 처리 (기존 ExcelHandler 재사용)
+    @param excel_handler: 기존 ExcelHandlerPyXL 인스턴스
+    @param target_sheet_name: 필터링 시트명
+    """
+    try:
+        # 1. 필터링 시트로 변경 (이미 생성된 시트)
+        if not excel_handler.switch_to_sheet(target_sheet_name):
+            return {
+                'status': 'error',
+                'message': f'필터링 시트 "{target_sheet_name}"를 찾을 수 없습니다.'
+            }
+        
+        # 2. OrderMatcher 인스턴스 생성
+        matcher = OrderMatcher(excel_handler)
+        
+        # 3. 매칭 및 정보 업데이트 실행
+        match_result = matcher.match_order(receipt_data, customer_info)
+        
+        # 4. 결과 반환 (저장은 배치 완료 후 한 번에)
+        if match_result.get('status') == 'success':
+            match_result['saved'] = False  # 아직 저장 안함
+            match_result['target_sheet'] = target_sheet_name
+        
+        return match_result
+        
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'처리 중 예상치 못한 오류가 발생했습니다: {str(e)}'
+        }
+
+def convert_date_columns_for_display(worksheet):
+    """저장 전에 날짜 컬럼을 사용자 친화적 형식으로 변환"""
+    from .excel_handler_with_pyxl import excel_serial_to_str
+    
+    # 헤더에서 날짜 컬럼 찾기
+    date_cols = {}
+    for col_idx in range(1, worksheet.max_column + 1):
+        cell_value = worksheet.cell(1, col_idx).value
+        if cell_value in ['주문기준일자', '주문시작시각']:
+            date_cols[cell_value] = col_idx
+    
+    # 각 행의 날짜 값 변환
+    for row_idx in range(2, worksheet.max_row + 1):
+        for col_name, col_idx in date_cols.items():
+            cell = worksheet.cell(row_idx, col_idx)
+            if cell.value and isinstance(cell.value, (int, float)):
+                try:
+                    with_time = (col_name == "주문시작시각")
+                    cell.value = excel_serial_to_str(float(cell.value), with_time=with_time)
+                except:
+                    pass  # 변환 실패 시 원본 유지
+
 # ===== 테스트 함수 =====
 
 def test_order_matching():

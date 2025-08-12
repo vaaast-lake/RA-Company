@@ -9,9 +9,10 @@ import io
 import base64
 
 # 기존 모듈들 import
+from modules.excel_handler_with_pyxl import ExcelHandlerPyXL
 from modules.img_extractor import extract_receipt_json
 from modules.info_extractor import PersonalInfoExtractor
-from modules.matcher import process_receipt_and_customer
+from modules.matcher import convert_date_columns_for_display, process_single_receipt_with_handler
 
 # WSL에서는 streamlit run app.py --server.headless true 로 실행
 # 그냥 실행하면 ELinks가 켜짐
@@ -73,6 +74,28 @@ def process_batch(selected_indices, excel_file, excel_password):
     
     try:
         total_sets = len(selected_indices)
+        excel_handler = None
+        
+        # ========== 배치 처리 시작 시 초기화 ==========
+        # ExcelHandler 한 번만 생성
+        excel_handler = ExcelHandlerPyXL(excel_path, excel_password)
+        if not excel_handler.read_excel_basic():
+            st.error("엑셀 파일을 읽을 수 없습니다.")
+            return
+        
+        # 필터링된 시트 생성 (한 번만)
+        keywords = ["채널추가무료배송", "택배요청"]
+        new_sheet_name = "필터링_결과"
+        
+        excel_handler.filter_to_new_sheet_raw(
+            keywords=keywords,
+            new_sheet_name=new_sheet_name,
+            mode="any",
+            extra_cols={"배송처리상태": "대기", "메모": ""},
+        )
+        excel_handler.switch_to_sheet(new_sheet_name)
+        st.info(f"📋 필터링 시트 '{new_sheet_name}' 생성 완료")
+        # =============================================
         
         for i, idx in enumerate(selected_indices):
             receipt_set = st.session_state.receipt_sets[idx]
@@ -118,11 +141,11 @@ def process_batch(selected_indices, excel_file, excel_password):
                 
                 # 4. 매칭 수행
                 try:
-                    match_result = process_receipt_and_customer(
-                        excel_path,
-                        excel_password if excel_password else None,
+                    match_result = process_single_receipt_with_handler(
+                        excel_handler,  # 기존 핸들러 전달
                         receipt_data,
                         customer_info,
+                        new_sheet_name
                     )
                 except Exception as e:
                     raise Exception(f"매칭 처리 실패: {str(e)}")
@@ -199,8 +222,12 @@ def process_batch(selected_indices, excel_file, excel_password):
                     except:
                         pass
         
-        # 배치 처리 완료 후 최종 파일 세션에 저장
+        # 배치 처리 완료 후 최종 저장
         if success_count > 0:
+            # 저장 전 날짜 형식 변환
+            convert_date_columns_for_display(excel_handler.worksheet)
+            excel_handler.workbook.save(excel_path)
+            
             with open(excel_path, 'rb') as f:
                 st.session_state.batch_result_file = f.read()
             st.session_state.batch_processing_complete = True
