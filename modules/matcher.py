@@ -82,28 +82,28 @@ class OrderMatcher:
             elif len(matching_orders) == 1:
                 # 단일 매칭: 정보 입력
                 matched_idx = matching_orders[0]['index']
-                updated_count = self.update_customer_info([matched_idx], customer_info)
+                updated_count = self.update_customer_info([matched_idx], customer_info, receipt_data)  # ← receipt_data 추가
                 
                 return {
                     'status': 'success',
                     'message': '주문 매칭 및 고객 정보 입력 완료',
                     'matched_order': matching_orders[0],
                     'updated_order_blocks': updated_count,
-                    'debug_info': debug_info  # ← 성공 시에도 debug 정보 추가 (선택사항)
+                    'debug_info': debug_info
                 }
             
             else:
                 # 다중 매칭: 가장 높은 점수(첫 번째) 주문에 자동 입력
-                best_match = matching_orders[0]  # 이미 점수순으로 정렬됨
+                best_match = matching_orders[0]
                 matched_idx = best_match['index']
-                updated_count = self.update_customer_info([matched_idx], customer_info)
+                updated_count = self.update_customer_info([matched_idx], customer_info, receipt_data)  # ← receipt_data 추가
                 
                 return {
                     'status': 'success',
                     'message': f'다중 매칭({len(matching_orders)}개) 중 최적 매칭에 고객 정보 입력 완료',
                     'matched_order': best_match,
                     'updated_order_blocks': updated_count,
-                    'multiple_candidates': len(matching_orders),  # 다중 매칭임을 표시
+                    'multiple_candidates': len(matching_orders),
                     'debug_info': debug_info
                 }
         
@@ -361,11 +361,12 @@ class OrderMatcher:
     
     # ===== 고객 정보 입력 =====
     
-    def update_customer_info(self, matched_indices: List[int], customer_info: Dict) -> int:
+    def update_customer_info(self, matched_indices: List[int], customer_info: Dict, receipt_data: Dict = None) -> int:
         """
         매칭된 주문에 고객 정보 입력 (워크시트 직접 수정)
         @param matched_indices: 매칭된 행 인덱스들  
         @param customer_info: 고객 정보
+        @param receipt_data: 영수증 데이터 (품목명용)
         @returns: 업데이트된 행 수
         """
         if not self.excel_handler.worksheet:
@@ -380,22 +381,37 @@ class OrderMatcher:
         # 2. 워크시트에서 컬럼 인덱스 찾기
         header_row = 1  # 보통 첫 번째 행이 헤더
         col_mapping = {}
+        all_headers = []  # 디버깅용
         for col_idx in range(1, self.excel_handler.worksheet.max_column + 1):
             cell_value = self.excel_handler.worksheet.cell(header_row, col_idx).value
-            if cell_value in ['수하인명', '수하인전화번호', '수하인핸드폰번호', '수하인주소']:
+            if cell_value in ['수하인명', '수하인전화번호', '수하인핸드폰번호', '수하인주소', '품목명']:
                 col_mapping[cell_value] = col_idx
+
+        # 디버깅 출력
+        # print(f"[DEBUG] 전체 헤더: {all_headers}")
+        # print(f"[DEBUG] 찾은 컬럼: {col_mapping}")
         
-        # 3. 각 그룹의 첫 번째 행에만 정보 입력
+        # 3. 품목명 텍스트 생성 (영수증 데이터가 있을 때만)
+        items_text = ""
+        if receipt_data and receipt_data.get('items'):
+            items_text = self.format_items_for_description(receipt_data['items'])
+            # print(f"[DEBUG] 생성된 품목명 텍스트: '{items_text}'")
+        else:
+            print(f"[DEBUG] 영수증 데이터 없음: receipt_data={receipt_data}")
+        
+        # 4. 각 그룹의 첫 번째 행에만 정보 입력
         for order_time, indices in time_groups.items():
             if not indices:
                 continue
             
             # DataFrame 인덱스를 실제 엑셀 행 번호로 변환 (헤더 고려)
             first_excel_row = indices[0] + 2  # DataFrame 인덱스 + 헤더(1) + 0-based 보정(1)
-            
+            # print(f"[DEBUG] 행 {first_excel_row}에 정보 입력 시도")
+
             # 고객 정보 입력
             if '수하인명' in col_mapping and customer_info.get('name'):
                 self.excel_handler.worksheet.cell(first_excel_row, col_mapping['수하인명'], customer_info['name'])
+                # print(f"[DEBUG] 수하인명 입력: {customer_info['name']}")
             
             if '수하인전화번호' in col_mapping and customer_info.get('phone'):
                 self.excel_handler.worksheet.cell(first_excel_row, col_mapping['수하인전화번호'], customer_info['phone'])
@@ -406,10 +422,53 @@ class OrderMatcher:
             if '수하인주소' in col_mapping and customer_info.get('address'):
                 self.excel_handler.worksheet.cell(first_excel_row, col_mapping['수하인주소'], customer_info['address'])
             
+            # 품목명 입력 (새로 추가)
+            if '품목명' in col_mapping and items_text:
+                self.excel_handler.worksheet.cell(first_excel_row, col_mapping['품목명'], items_text)
+            
             updated_count += 1
         
         return updated_count
-    
+
+    def format_items_for_description(self, items: List[Dict]) -> str:
+        """
+        영수증 items를 품목명 형식으로 변환
+        @param items: 영수증 아이템 리스트
+        @returns: 형식화된 품목명 텍스트
+        """
+        # print(f"[DEBUG] format_items_for_description 호출: {items}")
+        if not items:
+            return ""
+        
+        # 총 수량 계산
+        total_quantity = sum(item.get('quantity', 1) for item in items)
+        # print(f"[DEBUG] 총 수량: {total_quantity}")
+        # 아이템별 텍스트 생성
+        item_texts = []
+        for item in items:
+            name = item.get('name', '')
+            quantity = item.get('quantity', 1)
+            
+            # 수량이 1개면 "1개" 생략 가능, 1개 초과면 명시
+            if quantity == 1:
+                item_texts.append(f"{name}")
+            else:
+                item_texts.append(f"{name} {quantity}개")
+        
+        # print(f"[DEBUG] 생성된 아이템 텍스트: {item_texts}")
+
+        # 최종 형식: "총X개) item1/item2/item3"
+        if len(item_texts) == 1:
+            # 단일 아이템인 경우
+            # result = f"총{total_quantity}개) {item_texts[0]}"
+            # print(f"[DEBUG] 단일 아이템 결과: '{result}'")
+            return f"총{total_quantity}개) {item_texts[0]}"
+        else:
+            # 복수 아이템인 경우
+            # result = f"총{total_quantity}개) {'/'.join(item_texts)}"
+            # print(f"[DEBUG] 복수 아이템 결과: '{result}'")
+            return f"총{total_quantity}개) {'/'.join(item_texts)}"
+        
     def group_by_order_time(self, order_df: pd.DataFrame, indices: List[int]) -> Dict[float, List[int]]:
         """
         주문시작시각별로 행 인덱스 그룹핑
@@ -643,7 +702,7 @@ def process_single_receipt_with_handler(excel_handler, receipt_data: Dict,
         # 2. OrderMatcher 인스턴스 생성
         matcher = OrderMatcher(excel_handler)
         
-        # 3. 매칭 및 정보 업데이트 실행
+        # 3. 매칭 및 정보 업데이트 실행 (영수증 데이터도 전달)
         match_result = matcher.match_order(receipt_data, customer_info)
         
         # 4. 결과 반환 (저장은 배치 완료 후 한 번에)
