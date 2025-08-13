@@ -137,8 +137,18 @@ class ExcelHandlerPyXL:
             print("[OK] Direct load successful")
             return wb
         except Exception as err:
-            e1 = err
-            print(f"[WARN] Direct load failed: {type(e1).__name__}: {e1}")
+            print(f"[ERROR 1] Direct load failed:")
+            print(f"  - Error type: {type(err).__name__}")
+            print(f"  - Error message: {str(err)}")
+            print(f"  - File path: {base_path}")
+            print(f"  - File exists: {os.path.exists(base_path)}")
+            if os.path.exists(base_path):
+                print(f"  - File size: {os.path.getsize(base_path)} bytes")
+            
+            # 더 상세한 traceback 출력
+            import traceback
+            print(f"  - Full traceback:")
+            traceback.print_exc()
 
         # 2) styles.xml 제거 사본으로 재시도
         try:

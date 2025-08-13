@@ -252,7 +252,7 @@ class OrderMatcher:
     
     # ===== 개별 매칭 조건 검사 =====
     
-    def match_date(self, receipt_datetime: str, order_serial: float) -> bool:
+    def match_date(self, receipt_datetime: str, order_serial) -> bool:
         """
         날짜 매칭 검사 (정확한 일치 필요)
         @param receipt_datetime: 영수증 날짜시간 ("2025-08-01 11:14:31")
@@ -260,22 +260,43 @@ class OrderMatcher:
         @returns: 날짜 일치 여부
         """
         try:
+            # 데이터 타입과 값 확인
+            print(f"[DEBUG] order_serial 타입: {type(order_serial)}")
+            print(f"[DEBUG] order_serial 값: {order_serial}")
+            print(f"[DEBUG] order_serial repr: {repr(order_serial)}")
+
             # 1. 영수증 datetime을 날짜만 추출
             receipt_dt = self.parse_receipt_datetime(receipt_datetime)
             receipt_date = receipt_dt.date()
+
+            # # float로 변환 시도
+            # if isinstance(order_serial, str):
+            #     print(f"[DEBUG] 문자열을 float로 변환 시도: '{order_serial}'")
+            #     order_serial = float(order_serial)
             
-            # 2. 엑셀 시리얼을 datetime으로 변환 후 날짜 추출
-            order_dt = excel_serial_to_datetime(order_serial)
-            order_date = order_dt.date()
+            # # 2. 엑셀 시리얼을 datetime으로 변환 후 날짜 추출
+            # order_dt = excel_serial_to_datetime(order_serial)
+            # order_date = order_dt.date()
+
+            # Timestamp 객체 처리
+            if hasattr(order_serial, 'date'):  # pandas Timestamp
+                order_date = order_serial.date()
+            else:  # float (시리얼 숫자)
+                order_dt = excel_serial_to_datetime(float(order_serial))
+                order_date = order_dt.date()
+
+            print(f"[DEBUG] 영수증 날짜: {receipt_date}")
+            print(f"[DEBUG] 주문 날짜: {order_date}")
             
             # 3. 날짜 정확 일치 확인
             return receipt_date == order_date
             
-        except Exception:
+        except Exception as e:
             # 변환 실패 시 매칭 실패로 처리
+            print(f"[DEBUG] 매칭 실패: {e}")
             return False
     
-    def match_time(self, receipt_datetime: str, order_serial: float) -> bool:
+    def match_time(self, receipt_datetime: str, order_serial) -> bool:
         """
         시간 매칭 검사 (±10초 허용오차)
         @param receipt_datetime: 영수증 날짜시간
@@ -286,17 +307,29 @@ class OrderMatcher:
             # 1. 영수증 datetime을 datetime 객체로 변환
             receipt_dt = self.parse_receipt_datetime(receipt_datetime)
             
-            # 2. 엑셀 시리얼을 datetime 객체로 변환
-            order_dt = excel_serial_to_datetime(order_serial)
+            # # 2. 엑셀 시리얼을 datetime 객체로 변환
+            # order_dt = excel_serial_to_datetime(order_serial)
             
-            # 3. 시간 차이를 초 단위로 계산
+            # # 3. 시간 차이를 초 단위로 계산
+            # time_diff = abs((receipt_dt - order_dt).total_seconds())
+
+            # Timestamp 객체 처리
+            if hasattr(order_serial, 'to_pydatetime'):  # pandas Timestamp
+                order_dt = order_serial.to_pydatetime()
+            else:  # float (시리얼 숫자)
+                order_dt = excel_serial_to_datetime(float(order_serial))
+
             time_diff = abs((receipt_dt - order_dt).total_seconds())
+
+            print(f"[TIME DEBUG] 영수증: {receipt_dt}, 주문: {order_dt}")
+            print(f"[TIME DEBUG] 시간차: {time_diff}초, 허용: {self.time_tolerance_seconds}초, 통과: {time_diff <= self.time_tolerance_seconds}")
             
             # 4. ±10초 범위 내 확인
             return time_diff <= self.time_tolerance_seconds
             
-        except Exception:
+        except Exception as e:
             # 변환 실패 시 매칭 실패로 처리
+            print(f"[TIME ERROR] {e}")
             return False
     
     def match_product_name(self, receipt_name: str, order_name: str) -> Tuple[bool, float]:
@@ -321,7 +354,7 @@ class OrderMatcher:
         
         # 임계값 설정 (예: 0.8 이상이면 매칭으로 판단)
         # 한글자 차이는 대부분 통과 (8글자 중 1글자 = 87.5%)
-        is_match = similarity >= 0.8
+        is_match = similarity >= 0.75
         
         return is_match, similarity
     
@@ -388,14 +421,14 @@ class OrderMatcher:
                 col_mapping[cell_value] = col_idx
 
         # 디버깅 출력
-        # print(f"[DEBUG] 전체 헤더: {all_headers}")
-        # print(f"[DEBUG] 찾은 컬럼: {col_mapping}")
+        print(f"[DEBUG] 전체 헤더: {all_headers}")
+        print(f"[DEBUG] 찾은 컬럼: {col_mapping}")
         
         # 3. 품목명 텍스트 생성 (영수증 데이터가 있을 때만)
         items_text = ""
         if receipt_data and receipt_data.get('items'):
             items_text = self.format_items_for_description(receipt_data['items'])
-            # print(f"[DEBUG] 생성된 품목명 텍스트: '{items_text}'")
+            print(f"[DEBUG] 생성된 품목명 텍스트: '{items_text}'")
         else:
             print(f"[DEBUG] 영수증 데이터 없음: receipt_data={receipt_data}")
         
@@ -406,12 +439,12 @@ class OrderMatcher:
             
             # DataFrame 인덱스를 실제 엑셀 행 번호로 변환 (헤더 고려)
             first_excel_row = indices[0] + 2  # DataFrame 인덱스 + 헤더(1) + 0-based 보정(1)
-            # print(f"[DEBUG] 행 {first_excel_row}에 정보 입력 시도")
+            print(f"[DEBUG] 행 {first_excel_row}에 정보 입력 시도")
 
             # 고객 정보 입력
             if '수하인명' in col_mapping and customer_info.get('name'):
                 self.excel_handler.worksheet.cell(first_excel_row, col_mapping['수하인명'], customer_info['name'])
-                # print(f"[DEBUG] 수하인명 입력: {customer_info['name']}")
+                print(f"[DEBUG] 수하인명 입력: {customer_info['name']}")
             
             if '수하인전화번호' in col_mapping and customer_info.get('phone'):
                 self.excel_handler.worksheet.cell(first_excel_row, col_mapping['수하인전화번호'], customer_info['phone'])
@@ -436,7 +469,7 @@ class OrderMatcher:
         @param items: 영수증 아이템 리스트
         @returns: 형식화된 품목명 텍스트
         """
-        # print(f"[DEBUG] format_items_for_description 호출: {items}")
+        print(f"[DEBUG] format_items_for_description 호출: {items}")
         if not items:
             return ""
         
@@ -459,7 +492,7 @@ class OrderMatcher:
 
         # 총 수량 계산
         total_quantity = sum(item.get('quantity', 1) for item in delivery_items)
-        # print(f"[DEBUG] 총 수량: {total_quantity}")
+        print(f"[DEBUG] 총 수량: {total_quantity}")
         # 아이템별 텍스트 생성
         item_texts = []
         for item in delivery_items:
@@ -472,18 +505,18 @@ class OrderMatcher:
             else:
                 item_texts.append(f"{name} {quantity}개")
         
-        # print(f"[DEBUG] 생성된 아이템 텍스트: {item_texts}")
+        print(f"[DEBUG] 생성된 아이템 텍스트: {item_texts}")
 
         # 최종 형식: "총X개) item1/item2/item3"
         if len(item_texts) == 1:
             # 단일 아이템인 경우
             result = f"총{total_quantity}개) {item_texts[0]}"
-            # print(f"[DEBUG] 단일 아이템 결과: '{result}'")
+            print(f"[DEBUG] 단일 아이템 결과: '{result}'")
             return result
         else:
             # 복수 아이템인 경우
             result = f"총{total_quantity}개) {'/'.join(item_texts)}"
-            # print(f"[DEBUG] 복수 아이템 결과: '{result}'")
+            print(f"[DEBUG] 복수 아이템 결과: '{result}'")
             return result
         
     def group_by_order_time(self, order_df: pd.DataFrame, indices: List[int]) -> Dict[float, List[int]]:
@@ -508,7 +541,13 @@ class OrderMatcher:
                 continue
                 
             # float 타입으로 변환 (시리얼 숫자)
-            order_time = float(order_time)
+            # order_time = float(order_time)
+            # Timestamp 객체 처리
+            if hasattr(order_time, 'timestamp'):  # pandas Timestamp
+                # Timestamp를 float로 변환 (유닉스 타임스탬프 사용)
+                time_key = order_time.timestamp()
+            else:  # float (시리얼 숫자)
+                time_key = float(order_time)
             
             # 해당 시각의 그룹에 인덱스 추가
             if order_time not in time_groups:
