@@ -354,7 +354,7 @@ class OrderMatcher:
         
         # 임계값 설정 (예: 0.8 이상이면 매칭으로 판단)
         # 한글자 차이는 대부분 통과 (8글자 중 1글자 = 87.5%)
-        is_match = similarity >= 0.75
+        is_match = similarity >= 0.65
         
         return is_match, similarity
     

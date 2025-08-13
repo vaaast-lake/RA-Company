@@ -49,6 +49,11 @@ def process_batch(selected_indices, excel_file, excel_password):
         st.error("처리할 세트를 선택해주세요.")
         return
     
+    # 원본 데이터 확인
+    if not st.session_state.original_excel_data:
+        st.error("❌ 엑셀 파일 데이터가 없습니다. 파일을 다시 업로드해주세요.")
+        return
+    
     # 진행률 표시
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -58,57 +63,66 @@ def process_batch(selected_indices, excel_file, excel_password):
     fail_count = 0
     results = []
     
-    # 엑셀 임시 저장 (누적 처리 방식)
-    if st.session_state.batch_result_file:
-        # 이전 처리 결과가 있으면 그것을 기반으로 시작
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_excel:
+    # 현재 배치 시작 번호
+    start_num = st.session_state.processing_count + 1
+    
+    # 엑셀 파일 준비 (누적 처리 방식)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_excel:
+        if st.session_state.batch_result_file:
+            # 이전 처리 결과가 있으면 그것을 기반으로 시작
             tmp_excel.write(st.session_state.batch_result_file)
             excel_path = tmp_excel.name
-        st.info("🔄 이전 처리 결과에 추가로 처리합니다.")
-    else:
-        # 처음 처리하는 경우만 원본 파일 사용
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_excel:
-            tmp_excel.write(excel_file.read())
+            st.info(f"🔄 이전 처리 결과에 추가 처리 (기존: {st.session_state.processing_count}건)")
+        else:
+            # 처음 처리하는 경우 원본 파일 사용
+            tmp_excel.write(st.session_state.original_excel_data)
             excel_path = tmp_excel.name
-        st.info("🆕 새로운 파일로 처리를 시작합니다.")
+            st.info("🆕 원본 파일을 기반으로 첫 번째 배치 처리를 시작합니다.")
     
     try:
         total_sets = len(selected_indices)
         excel_handler = None
         
-        # ========== 배치 처리 시작 시 초기화 ==========
-        # ExcelHandler 한 번만 생성
-        excel_handler = ExcelHandlerPyXL(excel_path, excel_password)
+        # ExcelHandler 생성
+        excel_handler = ExcelHandlerPyXL(excel_path, st.session_state.original_excel_password)
         if not excel_handler.read_excel_basic():
             st.error("엑셀 파일을 읽을 수 없습니다.")
             return
         
-        # 필터링된 시트 생성 (한 번만)
+        # 필터링된 시트 처리
         keywords = ["채널추가무료배송", "택배요청"]
         new_sheet_name = "필터링_결과"
         
-        excel_handler.filter_to_new_sheet_raw(
-            keywords=keywords,
-            new_sheet_name=new_sheet_name,
-            mode="any",
-            extra_cols={"배송처리상태": "대기", "메모": ""},
-        )
-        excel_handler.switch_to_sheet(new_sheet_name)
-        st.info(f"📋 필터링 시트 '{new_sheet_name}' 생성 완료")
-        # =============================================
+        if st.session_state.processing_count == 0:
+            # 첫 번째 배치: 새 시트 생성
+            excel_handler.filter_to_new_sheet_raw(
+                keywords=keywords,
+                new_sheet_name=new_sheet_name,
+                mode="any",
+                extra_cols={"배송처리상태": "대기", "메모": ""},
+            )
+            st.info(f"📋 필터링 시트 '{new_sheet_name}' 생성 완료")
+        else:
+            # 누적 배치: 기존 시트 사용
+            if not excel_handler.switch_to_sheet(new_sheet_name):
+                st.error(f"❌ 필터링 시트 '{new_sheet_name}'를 찾을 수 없습니다.")
+                return
+            st.info(f"📋 기존 필터링 시트 '{new_sheet_name}' 사용")
         
+        # 각 세트 처리
         for i, idx in enumerate(selected_indices):
             receipt_set = st.session_state.receipt_sets[idx]
+            current_num = start_num + i
             
             # 진행률 업데이트
             progress = (i + 1) / total_sets
             progress_bar.progress(progress)
-            status_text.text(f"처리 중: {receipt_set['name']} ({i+1}/{total_sets})")
+            status_text.text(f"처리 중: {receipt_set['name']} ({current_num}번째, {i+1}/{total_sets})")
             
             # 상태 업데이트
             st.session_state.receipt_sets[idx]['status'] = '처리중'
             
-            # 개별 세트 처리 - 단계별 예외 처리
+            # 개별 세트 처리
             image_path = None
             receipt_data = None
             customer_info = None
@@ -142,7 +156,7 @@ def process_batch(selected_indices, excel_file, excel_password):
                 # 4. 매칭 수행
                 try:
                     match_result = process_single_receipt_with_handler(
-                        excel_handler,  # 기존 핸들러 전달
+                        excel_handler,
                         receipt_data,
                         customer_info,
                         new_sheet_name
@@ -161,10 +175,10 @@ def process_batch(selected_indices, excel_file, excel_password):
                         'matched_product': match_result['matched_order']['order_data']['상품명'],
                         'match_score': f"{match_result['matched_order']['score']:.1%}",
                         'updated_blocks': match_result['updated_order_blocks'],
-                        'customer_name': customer_info.get('name', 'N/A')
+                        'customer_name': customer_info.get('name', 'N/A'),
+                        'item_num': current_num  # 추가
                     }
                 else:
-                    # 매칭 실패 (시스템 오류는 아님)
                     st.session_state.receipt_sets[idx]['status'] = '실패'
                     fail_count += 1
                     
@@ -175,7 +189,8 @@ def process_batch(selected_indices, excel_file, excel_password):
                         'receipt_data': receipt_data,
                         'receipt_datetime': receipt_data.get('approved_at', 'N/A') if receipt_data else 'N/A',
                         'receipt_product': receipt_data.get('items', [{}])[0].get('name', 'N/A') if receipt_data and receipt_data.get('items') else 'N/A',
-                        'debug_info': match_result.get('debug_info')  # ← debug 정보 추가
+                        'debug_info': match_result.get('debug_info'),
+                        'item_num': current_num  # 추가
                     }
                 
                 st.session_state.receipt_sets[idx]['result'] = simplified_result
@@ -185,25 +200,25 @@ def process_batch(selected_indices, excel_file, excel_password):
                 })
                 
             except Exception as e:
-                # 개별 세트 처리 중 시스템 오류 발생
+                # 시스템 오류 발생
                 st.session_state.receipt_sets[idx]['status'] = '실패'
                 fail_count += 1
                 
-                # 고객명 추출 시도 (가능한 경우)
+                # 고객명 추출 시도
                 customer_name = 'N/A'
                 if customer_info and customer_info.get('name'):
                     customer_name = customer_info['name']
                 elif receipt_set.get('customer_info'):
-                    # 첫 번째 줄에서 이름 추출 시도
                     first_line = receipt_set['customer_info'].split('\n')[0].strip()
-                    if first_line and len(first_line) < 10:  # 이름으로 보이는 경우
+                    if first_line and len(first_line) < 10:
                         customer_name = first_line
                 
                 error_result = {
                     'status': 'error',
                     'message': f'처리 중 오류 발생: {str(e)}',
                     'customer_name': customer_name,
-                    'error_detail': str(e)
+                    'error_detail': str(e),
+                    'item_num': current_num  # 추가
                 }
                 st.session_state.receipt_sets[idx]['result'] = error_result
                 results.append({
@@ -211,26 +226,34 @@ def process_batch(selected_indices, excel_file, excel_password):
                     'result': error_result
                 })
                 
-                # 실패 표시를 상태 텍스트에 반영
                 status_text.text(f"⚠️ {receipt_set['name']} 실패 - 계속 진행 중... ({i+1}/{total_sets})")
             
             finally:
-                # 개별 세트 처리 후 정리
+                # 임시 이미지 파일 정리
                 if image_path and os.path.exists(image_path):
                     try:
                         os.unlink(image_path)
                     except:
                         pass
         
-        # 배치 처리 완료 후 최종 저장
-        if success_count > 0:
-            # 저장 전 날짜 형식 변환
+        # 배치 처리 완료 후 저장
+        try:
+            # 날짜 형식 변환
             convert_date_columns_for_display(excel_handler.worksheet)
             excel_handler.workbook.save(excel_path)
             
+            # 저장된 파일을 세션에 보관
             with open(excel_path, 'rb') as f:
                 st.session_state.batch_result_file = f.read()
+            
+            # 처리 카운트 업데이트
+            st.session_state.processing_count += len(selected_indices)
             st.session_state.batch_processing_complete = True
+            
+            st.success(f"✅ 배치 저장 완료 (누적 처리: {st.session_state.processing_count}건)")
+            
+        except Exception as e:
+            st.error(f"❌ 파일 저장 중 오류: {str(e)}")
         
         # 완료 후 결과 표시
         progress_bar.progress(1.0)
@@ -247,13 +270,13 @@ def process_batch(selected_indices, excel_file, excel_password):
         with col3:
             st.metric("📊 총 처리", total_sets)
         
-        # 다운로드 버튼 (성공한 케이스가 있을 때만)
-        if success_count > 0 and st.session_state.batch_result_file:
+        # 다운로드 버튼
+        if st.session_state.batch_result_file:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             download_filename = f"배치처리결과_{timestamp}.xlsx"
             
             st.download_button(
-                label="📥 전체 결과 파일 다운로드",
+                label=f"📥 전체 결과 파일 다운로드 (총 {st.session_state.processing_count}건)",
                 data=st.session_state.batch_result_file,
                 file_name=download_filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -262,15 +285,16 @@ def process_batch(selected_indices, excel_file, excel_password):
         
         # 상세 결과
         if results:
-            with st.expander("처리 결과 상세"):
+            with st.expander("이번 배치 처리 결과 상세"):
                 for result in results:
+                    item_num = result['result'].get('item_num', '?')
                     if result['result']['status'] == 'success':
-                        st.success(f"**{result['set_name']}**: {result['result']['message']}")
+                        st.success(f"**{item_num}번 - {result['set_name']}**: {result['result']['message']}")
                         st.write(f"- 고객: {result['result']['customer_name']}")
                         st.write(f"- 매칭 상품: {result['result']['matched_product']}")
                         st.write(f"- 매칭 점수: {result['result']['match_score']}")
                     else:
-                        st.error(f"**{result['set_name']}**: {result['result']['message']}")
+                        st.error(f"**{item_num}번 - {result['set_name']}**: {result['result']['message']}")
     
     finally:
         # 임시 엑셀 파일 정리
@@ -298,6 +322,14 @@ if 'batch_result_file' not in st.session_state:
     st.session_state.batch_result_file = None
 if 'batch_processing_complete' not in st.session_state:
     st.session_state.batch_processing_complete = False
+if 'original_excel_data' not in st.session_state:
+    st.session_state.original_excel_data = None
+if 'original_excel_password' not in st.session_state:
+    st.session_state.original_excel_password = None
+if 'original_excel_filename' not in st.session_state:
+    st.session_state.original_excel_filename = None
+if 'processing_count' not in st.session_state:
+    st.session_state.processing_count = 0
 
 # 탭 구성
 tab1, tab2, tab3 = st.tabs(["📝 데이터 입력", "🔍 배치 처리", "📊 결과 관리"])
@@ -372,7 +404,34 @@ with tab2:
     with st.sidebar:
         st.header("설정")
         excel_file = st.file_uploader("엑셀 파일 업로드", type=['xlsx'])
+        
+        # 파일이 업로드되었을 때 원본 데이터 저장
+        if excel_file is not None:
+            # 새 파일인지 확인
+            if (st.session_state.original_excel_filename != excel_file.name or 
+                st.session_state.original_excel_data is None):
+                
+                # 원본 파일 데이터를 세션에 저장
+                excel_file.seek(0)  # 파일 포인터를 처음으로 되돌림
+                st.session_state.original_excel_data = excel_file.read()
+                st.session_state.original_excel_filename = excel_file.name
+                
+                # 새 파일이므로 이전 처리 결과 초기화
+                st.session_state.batch_result_file = None
+                st.session_state.batch_processing_complete = False
+                st.session_state.processing_count = 0
+                
+                st.success(f"✅ 새 파일 업로드: {excel_file.name}")
+                st.info("💡 새 파일이 업로드되어 이전 처리 결과가 초기화되었습니다.")
+            else:
+                st.info(f"📄 기존 파일 사용: {excel_file.name}")
+        
         excel_password = st.text_input("엑셀 비밀번호 (선택)", type="password")
+        
+        # 암호 변경 감지
+        if excel_password != st.session_state.original_excel_password:
+            st.session_state.original_excel_password = excel_password if excel_password else None
+
     
     if st.session_state.receipt_sets:
         # 현재 세트 목록 표시 및 편집
@@ -493,10 +552,14 @@ with tab2:
                 type="primary",
                 disabled=processing_in_progress  # ← 처리 중일 때 비활성화
             ):
-                if excel_file and selected_indices:
-                    process_batch(selected_indices, excel_file, excel_password)
+                # excel_file 대신 세션 상태 확인
+                if st.session_state.original_excel_data and selected_indices:
+                    process_batch(selected_indices, None, st.session_state.original_excel_password)
                 else:
-                    st.error("엑셀 파일을 업로드하고 처리할 세트를 선택해주세요.")
+                    if not st.session_state.original_excel_data:
+                        st.error("엑셀 파일을 업로드해주세요.")
+                    if not selected_indices:
+                        st.error("처리할 세트를 선택해주세요.")
 
         with col_c:
             if st.button(
@@ -609,14 +672,13 @@ with tab3:
                                     st.write(f"{i+1}. 주문 {attempt['index']}: {attempt['order_product']} → {status}")
         
         # 결과 초기화 버튼
-        if completed_sets or failed_sets:
-            st.markdown("---")
-            if st.button("🗑️ 모든 결과 초기화"):
-                st.session_state.receipt_sets = []
-                st.session_state.batch_result_file = None
-                st.session_state.batch_processing_complete = False
-                st.success("✅ 모든 결과가 초기화되었습니다. 다음 처리는 원본 파일부터 시작됩니다.")
-                st.rerun()
+        if st.button("🗑️ 모든 결과 초기화"):
+            st.session_state.receipt_sets = []
+            st.session_state.batch_result_file = None
+            st.session_state.batch_processing_complete = False
+            st.session_state.processing_count = 0  # 추가
+            st.success("✅ 모든 결과가 초기화되었습니다. 다음 처리는 원본 파일부터 시작됩니다.")
+            st.rerun()
     
     else:
         st.info("처리된 결과가 없습니다.")
