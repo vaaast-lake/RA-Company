@@ -7,6 +7,7 @@ import tempfile
 import datetime
 import io
 import base64
+from streamlit_paste_button import paste_image_button
 
 # 기존 모듈들 import
 from modules.excel_handler_with_pyxl import ExcelHandlerPyXL
@@ -341,22 +342,82 @@ with tab1:
     
     with col1:
         st.subheader("영수증 이미지")
-        uploaded_image = st.file_uploader("영수증 이미지", type=['png', 'jpg', 'jpeg'], key="new_image")
+        
+        # 업로드 방법 선택
+        upload_method = st.radio(
+            "이미지 입력 방법:",
+            ["📁 파일 선택", "📋 클립보드 붙여넣기"],
+            horizontal=True
+        )
+        
+        uploaded_image = None
+        
+        if upload_method == "📁 파일 선택":
+            uploaded_image = st.file_uploader(
+                "영수증 이미지", 
+                type=['png', 'jpg', 'jpeg'], 
+                key="new_image"
+            )
+        else:
+            st.info("💡 먼저 이미지를 클립보드에 복사하세요 (Win+Shift+S 스크린샷, 또는 Ctrl+C 복사)")
+            
+            # 클립보드 붙여넣기 버튼
+            paste_result = paste_image_button(
+                label="📋 클립보드에서 이미지 붙여넣기",
+                text_color="#ffffff",
+                background_color="#28a745",
+                hover_background_color="#218838",
+                key="paste_button"
+            )
+            
+            if paste_result.image_data is not None:
+                try:
+                    # paste_result.image_data의 타입 확인 및 처리
+                    if isinstance(paste_result.image_data, Image.Image):
+                        # 이미 PIL Image 객체인 경우
+                        uploaded_image = paste_result.image_data
+                        st.success("✅ 클립보드에서 이미지를 성공적으로 가져왔습니다!")
+                    elif isinstance(paste_result.image_data, bytes):
+                        # bytes 데이터인 경우
+                        uploaded_image = Image.open(io.BytesIO(paste_result.image_data))
+                        st.success("✅ 클립보드에서 이미지를 성공적으로 가져왔습니다!")
+                    else:
+                        # 다른 타입인 경우 디버깅 정보 표시
+                        st.error(f"예상치 못한 이미지 데이터 타입: {type(paste_result.image_data)}")
+                        st.write(f"데이터 내용: {paste_result.image_data}")
+                        
+                except Exception as e:
+                    st.error(f"이미지 처리 실패: {str(e)}")
+                    # 디버깅 정보 추가
+                    st.write(f"paste_result.image_data 타입: {type(paste_result.image_data)}")
+                    if hasattr(paste_result.image_data, '__dict__'):
+                        st.write(f"속성들: {paste_result.image_data.__dict__}")
+        
+        # 이미지 표시
         if uploaded_image:
-            image = Image.open(uploaded_image)
-    
-            # 원본 크기 표시
-            original_size = image.size
-            st.caption(f"원본 크기: {original_size[0]} x {original_size[1]}px")
+            # PIL Image 객체 확인
+            if not isinstance(uploaded_image, Image.Image):
+                try:
+                    image = Image.open(uploaded_image)
+                except:
+                    st.error("이미지를 열 수 없습니다.")
+                    image = None
+            else:
+                image = uploaded_image
             
-            # 리사이즈된 이미지 표시
-            display_image = resize_image(image, max_width=400, max_height=500)
-            resized_size = display_image.size
-            
-            st.image(display_image, caption=f"미리보기 ({resized_size[0]} x {resized_size[1]}px)")
-    
-            if original_size != resized_size:
-                st.caption("💡 표시용으로 크기가 조정되었습니다. 원본은 그대로 사용됩니다.")
+            if image:
+                # 원본 크기 표시
+                original_size = image.size
+                st.caption(f"원본 크기: {original_size[0]} x {original_size[1]}px")
+                
+                # 리사이즈된 이미지 표시
+                display_image = resize_image(image, max_width=400, max_height=500)
+                resized_size = display_image.size
+                
+                st.image(display_image, caption=f"미리보기 ({resized_size[0]} x {resized_size[1]}px)")
+
+                if original_size != resized_size:
+                    st.caption("💡 표시용으로 크기가 조정되었습니다. 원본은 그대로 사용됩니다.")
     
     with col2:
         st.subheader("고객 정보")
@@ -372,20 +433,39 @@ with tab1:
     
     # 세트 추가 버튼
     if st.button("➕ 세트 추가", type="primary"):
-        if uploaded_image and customer_text:
+        # 이미지와 고객 정보 확인
+        current_image = None
+        
+        # 업로드된 이미지 또는 클립보드 이미지 확인
+        if upload_method == "📁 파일 선택" and uploaded_image:
+            current_image = Image.open(uploaded_image)
+        elif upload_method == "📋 클립보드 붙여넣기" and uploaded_image:
+            current_image = uploaded_image  # 이미 PIL Image 객체
+        
+        if current_image and customer_text:
             # 이미지를 base64로 저장 (세션 상태 유지를 위해)
             import base64
             import io
             
+            # PIL Image를 base64로 변환
             buf = io.BytesIO()
-            image.save(buf, format='PNG')
+            # 이미지 포맷 결정 (PNG로 통일)
+            current_image.save(buf, format='PNG')
             img_base64 = base64.b64encode(buf.getvalue()).decode()
+            
+            # 파일명 생성
+            if upload_method == "📁 파일 선택":
+                image_name = uploaded_image.name
+            else:
+                import datetime
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                image_name = f"clipboard_{timestamp}.png"
             
             new_set = {
                 'id': len(st.session_state.receipt_sets) + 1,
                 'name': set_name if set_name else f"세트 {len(st.session_state.receipt_sets) + 1}",
                 'image_data': img_base64,
-                'image_name': uploaded_image.name,
+                'image_name': image_name,
                 'customer_info': customer_text,
                 'status': '대기',
                 'result': None
@@ -395,7 +475,10 @@ with tab1:
             st.success(f"✅ '{new_set['name']}' 세트가 추가되었습니다!")
             st.rerun()
         else:
-            st.error("영수증 이미지와 고객 정보를 모두 입력해주세요.")
+            if not current_image:
+                st.error("영수증 이미지를 입력해주세요.")
+            if not customer_text:
+                st.error("고객 정보를 입력해주세요.")
 
 with tab2:
     st.header("배치 처리")
